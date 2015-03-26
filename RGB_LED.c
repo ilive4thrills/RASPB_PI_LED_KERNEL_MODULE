@@ -9,34 +9,27 @@
 #include <linux/semaphore.h> /* enable locking */
 #include <asm/uaccess.h>   /* copy_to_user and copy_from_user */
 #include <linux/kdev_t.h>   /* use MAJOR macro for dev_t types */
-#include <sys/stat.h>    /* set permissions of device file */
-#include <RGB_LED_IOCTL.h> /* includes linux/ioctl.h> */
+#include <linux/device.h>
+#include <linux/types.h>
+//#include <sys/stat.h>    /* set permissions of device file */
+#include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
 
 #define DEV_NAME "RGB_LED" 
-
 #define DEV_AUTHOR "Joseph Garcia"
 #define LICENSE "GPL"
 #define MOD_DESC "This device allows multiple readers, but will only allow writing after previous value has been read.(ECE 331 HW 7)"
 
 static struct rgb_led_colors RGB_LED; /*create instance of RGB_LED */
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
-static struct class* dev_cls;
+static struct class* dev_cls;  /* create class type for the character device */
 
 static int majornum;  
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
 
-
-long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
-{
-
-
-}
-
 int open_device(struct inode* inode, struct file* file)   /* open the device */
 {
-		
 	printk(KERN_INFO "Device has been opened\n");
 	return 0;  /* successful open */
 }
@@ -54,55 +47,90 @@ struct file_operations fops = {
 	.release = release_device  /* " " closing the device */
 };
 
+long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
+{
+	int k = 0;
+	int good = 0;
+	char* RGB_LED_GPIO_LBLS[3] = {"Red","Green","Blue"};
+       // set __init and __exit flags?????
+	for (k = 22; k < 25; k++) {
+		if ((func_ret = gpio_request(k, RGB_LED_GPIO_LBLS[k])) < 0) {
+			printk(KERN_ALERT "Unable to request GPIO Pin %d for color %s.\n", k, RGB_LED_GPIO_LBLS[k]);  /* Check that GPIO pins can be requested */
+			return func_ret;
+		} 
+		if (func_ret == 0) {
+			good = good + 1;
+		}
+	}
+
+	if (good == 3) {
+		                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+
+
+	call gpio_free later on!!!
+
+
+}
+
+char *module_perm(struct device *dev, umode_t *mode)
+{
+    if(mode) *mode = 0666;
+    return NULL;
+}
+
 /* register capabilities of the device driver with kernel */
 
 static int init_driver(void) {
+
+	majornum = MAJOR(devnum); //* grab 12 MSB from devnum, store them in majornum as the driver's major number */
 	
 	if((func_ret = alloc_chrdev_region(&devnum,0,1,DEV_NAME)) < 0) {
 		printk(KERN_ALERT "unable to allocate major number for device driver.\n");
 		return func_ret; /* get that error number */
-	}                                                                                     /* allocate device dynamically, check to make sure it worked. */
+	}                                                                                     /* allocate character device dynamically, check to make sure it worked. */
 	
 
 	if ((dev_cls = class_create(THIS_MODULE, "chardrv")) == NULL) {
 		unregister_chrdev_region(devnum,1);
-		return -1;                                                  /* create class for character device */
+		return -1;                                                                 /* create class "chardrv" for character device */
 	}
 
-	if(device_create(dev_cls, NULL, devnum, NULL, "RGB_LED") == NULL) {
+	if(device_create(dev_cls, NULL, devnum, NULL, "RGB_LED") == NULL) { /*ERR_PTR is another name for the failure value */
 		class_destroy(dev_cls);
-		aunregister_chrdev_region(devnum,1);
+		unregister_chrdev_region(devnum,1);           /* create /dev file for the RGB LED */
+		return -1;
+	}
 
-	majornum = MAJOR(devnum); /* grab 12 MSB from devnum, store them in majornum as the driver's major number */
-	mycdev = cdev_alloc(); /* allocate space for charcter device struct */
-	if (mycdev == NULL) {
+	if ((mycdev = cdev_alloc()) == NULL) { /* allocate space for charcter device struct, contains file operations struct */
 		printk(KERN_ALERT "Failed to allocate and return a cdev structure\n");
 	}
 
-	mycdev->ops = &fops; /* ops expects pointer to file_operations struct DO NOT YET HAVE*/
-	mycdev->owner = THIS_MODULE; /* say this driver owns the character device structur mycdev */
+	cdev_init(mycdev, &fops);  /* initialize the character device operations struct (how the kernel represents the character device internally) */		
+	mycdev->owner = THIS_MODULE; /* say this driver owns the character device structure mycdev */
 	
 	/* add the character device to the kernel */
-	func_ret = cdev_add(mycdev,devnum,1); /*1 since only want 1 minor number */
-	if(func_ret < 0) {
+	if((func_ret = cdev_add(mycdev,devnum,1)) < 0) {  /* add character device struct to kernel, 1 flag since we only want one minor number */
+		device_destroy(dev_cls, devnum);
+		class_destroy(dev_cls);
+		unregister_chrdev_region(devnum,1);
 		printk(KERN_ALERT "Unable to add character device (driver) struct to kernel. Value %d returned\n",func_ret);
 		return func_ret;
 	}  /* making sure that struct was added to kernel */
 
 	/* initialize semaphore capabilities */
 	sema_init(&sema,1); /* initialize semaphore to 1 (does not initialize mutex semaphore at runtime) */
-	
+	 
+    printk(KERN_INFO "RGB_LED: Device registered.\n");
 	return 0; /* successful driver initialization */
 }
 
-/* function to set the permissions of the device. */
-int chmod("/dev/RGB_LED", 0666);  /* make it so that everyone can read and write to the device file "/dev/RGB_LED" */
 static int cleanup_driver(void) {  /* unregister everything in reverse order. */
-	cdev_del(mycdev); /* free the char device structure space */
-	/* N.B. no "cdev_unalloc" function seems to exist. cdev_del somehow cleans up everything.*/
+    
+    cdev_del(mycdev); /* free the char device structure space */
+    device_destroy(dev_cls,devnum);
+    class_destroy(dev_cls);
 	unregister_chrdev_region(devnum,1); /* start unregistering (1) device number, starting at device number (devnum). */
-	printk(KERN_INFO "The kernel char driver hw7_driver has been unloaded from the system.\n");
-	/* don't need to return anything */
+	printk(KERN_INFO "RGB_LED: Device unloaded.\n");	/* don't need to return anything */
 }
 
 module_init(init_driver);
@@ -110,20 +138,9 @@ module_exit(cleanup_driver);            /* driver initialization and exiting mac
 
 MODULE_AUTHOR(DEV_AUTHOR);
 MODULE_LICENSE(LICENSE);            /* For modinfo information listings */
-MODULE_DESCRIPTION(MOD_DESC);
+MODULE_DESCRIPTION(MOD_DESC);                                                                    
 
 #if 0
-B)
-
-obj-m += HW7.o
-
-all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-#endif                                                                      
-
-
 ssize_t read_device(struct file* filp, char* userbuf, size_t bufsize, loff_t* offset)  /* read data from device */
 {
       /* using copy_to_user(destination,source,amt2transfer) */
@@ -155,3 +172,4 @@ ssize_t write_device(struct file* filp, const char __user * userbuf, size_t bufs
 	}
 	return func_ret;
 }
+#endif
