@@ -11,6 +11,7 @@
 #include <linux/kdev_t.h>   /* use MAJOR macro for dev_t types */
 #include <linux/device.h>
 #include <linux/types.h>
+#include <errno.h>
 //#include <sys/stat.h>    /* set permissions of device file */
 #include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
 
@@ -52,23 +53,26 @@ long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 	int k = 0;
 	int good = 0;
 	char* RGB_LED_GPIO_LBLS[3] = {"Red","Green","Blue"};
-       // set __init and __exit flags?????
-	for (k = 22; k < 25; k++) {
-		if ((func_ret = gpio_request(k, RGB_LED_GPIO_LBLS[k])) < 0) {
-			printk(KERN_ALERT "Unable to request GPIO Pin %d for color %s.\n", k, RGB_LED_GPIO_LBLS[k]);  /* Check that GPIO pins can be requested */
-			return func_ret;
-		} 
-		if (func_ret == 0) {
-			good = good + 1;
-		}
-	}
-
-	if (good == 3) {
-		                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
 
 
-	call gpio_free later on!!!
+	switch(cmd) {
+	
+		case RGB_LED_R:
+			printk(KERN_INFO "Reading RGB_LED not a supported operation for device.\n");
+			return -EBADRQC;  /* return bad request code */
+		break;
+	
+		case RGB_LED_RW:
+			printk(KERN_INFO "Read & Write Not a supported operation for device.\n");
+			return -EBADRQC;
+		break;
 
+		case RGB_LED_W:   /* Turn user space code into kernel space code. */
+
+		break;  
+
+//	call gpio_free later on!!!
+// set __init and __exit flags????
 
 }
 
@@ -119,6 +123,22 @@ static int init_driver(void) {
 
 	/* initialize semaphore capabilities */
 	sema_init(&sema,1); /* initialize semaphore to 1 (does not initialize mutex semaphore at runtime) */
+
+	for (k = 22; k < 25; k++) {
+		if ((func_ret = gpio_request(k, RGB_LED_GPIO_LBLS[k])) < 0) {
+			printk(KERN_ALERT "Unable to request GPIO Pin %d for color %s.\n", k, RGB_LED_GPIO_LBLS[k]);  /* Check that GPIO pins can be requested */
+			return func_ret;
+		} 
+		if (func_ret == 0) {
+			good = good + 1;
+		}
+	}		
+
+	if (good == 3) {   /* able to request all three pins, so we set them as output. */
+		gpio_direction_ouput(22,1);
+		gpio_direction_output(23,1);
+		gpio_direction_output(24,1);
+	}
 	 
     printk(KERN_INFO "RGB_LED: Device registered.\n");
 	return 0; /* successful driver initialization */
@@ -126,9 +146,13 @@ static int init_driver(void) {
 
 static int cleanup_driver(void) {  /* unregister everything in reverse order. */
     
-    cdev_del(mycdev); /* free the char device structure space */
-    device_destroy(dev_cls,devnum);
-    class_destroy(dev_cls);
+    	int k = 0;
+	for (k = 22; k < 25; k++) {
+		gpio_free(k);              /* freeing the GPIO pins */
+	}	
+    	cdev_del(mycdev); /* free the char device structure space */
+    	device_destroy(dev_cls,devnum);
+    	class_destroy(dev_cls);
 	unregister_chrdev_region(devnum,1); /* start unregistering (1) device number, starting at device number (devnum). */
 	printk(KERN_INFO "RGB_LED: Device unloaded.\n");	/* don't need to return anything */
 }
