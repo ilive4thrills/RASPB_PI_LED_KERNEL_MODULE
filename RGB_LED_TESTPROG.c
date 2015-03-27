@@ -15,6 +15,10 @@ int main(int argc, char *argv[])
                  printf("bcm2835 library not successfully opened.\n");
                  return 1;
          }
+
+	 int fd = 0;
+
+	fd = open("/dev/RGB_LED",O_WRONLY|O_NONBLOCK|S_IWRUSR);   /* may have to revice THESE FLAGS!!!!! */
          const uint8_t CLK = 25;
          const int NBITS = 11;
          int blue = 0;
@@ -38,7 +42,8 @@ int main(int argc, char *argv[])
          bcm2835_gpio_fsel(CLK,BCM2835_GPIO_FSEL_OUTP);
  
          /* pass in RGB on cmd line. N.B. Enter ./program 0 0 0 on command line to have lights go off */
-         red = atoi(argv[1]);
+        /* make sure THAT ALL ARGUMENTS ARE PASSED SO WE DON'T SEG FAULT */ 
+	red = atoi(argv[1]);
          green = atoi(argv[2]);   /* convert input strings into numbers */
          blue = atoi(argv[3]);
 
