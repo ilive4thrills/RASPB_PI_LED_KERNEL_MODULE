@@ -11,6 +11,7 @@
 #include <linux/kdev_t.h>   /* use MAJOR macro for dev_t types */
 #include <linux/device.h>
 #include <linux/types.h>
+#include <linux/delay.h>  /* doing delays in kernel space */
 #include <linux/gpio.h>   /*includes errno.h as well. */
 //#include <sys/stat.h>    /* set permissions of device file */
 #include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
@@ -20,7 +21,7 @@
 #define LICENSE "GPL"
 #define MOD_DESC "This device allows multiple readers, but will only allow writing after previous value has been read.(ECE 331 HW 7)"
 
-rgb_led_colors RGB_LED; /*create instance of RGB_LED */  /* I think this will come in handy..... */
+ /*create instance of RGB_LED */  /* I think this will come in handy..... */
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
 static struct class* dev_cls;  /* create class type for the character device */
 
@@ -44,12 +45,12 @@ static int release_device(struct inode* inode, struct file* file)   /* release t
 
 static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
-	
+	rgb_led_colors RGB_LED; 	
 	switch(cmd) {
-	
+		
 		case RGB_LED_R:
 			printk(KERN_INFO "Reading RGB_LED not a supported operation for device.\n");
-			return -EBADRQC;  /* return bad request c	ode */
+			return -EBADRQC;  /* return bad request code */
 		break;
 	
 		case RGB_LED_RW:
@@ -61,7 +62,7 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 		TO DO: 
 			// Piece of code to reject incoming processes if writing is still going on DONEISH
 			// Initialize the clock, found on PIN 25. It needs to be set low initially. DONE
-			// Set device driver permissions
+			// Set device file permissions
 			// Piece of code to allow writing to the RGB_LED to occur. 
 			// set __init and __exit flags????
 			
@@ -69,11 +70,15 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 				printk(KERN_ALERT "Another process is currently writing to the RGB_LED device.\n");
 				return -1;
 			}
-			if (copy_from_user...) {
-				down_interrupt
-		   		for(k = 0; k < NBITS; k++) {
+			if ((func_ret = copy_from_user(RGB_LED, (rgb_led_colors *)arg, sizeof(rgb_led_colors))) != 0) {
+				printk(KERN_ALERT "Unable to copy information from user space.\n");
+				return func_ret;
+			}
+			if (func_ret == 0) {
+				down_interruptible(&sema);
+		   		for(k = 0; k < 11; k++) {
                 	  		redb = (red >> (10 - k)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
-                  			bcm2835_gpio_write(RED, redb);
+                  			set_gpio_value...bcm2835_gpio_write(RED, redb);
                   			greenb = (green >> (10 - k)) & 1;    /* same as above */
                   			bcm2835_gpio_write(GREEN, greenb);
                   			blueb = (blue >> (10 - k)) & 1;     /* same as above */
@@ -85,7 +90,8 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
                   			 bcm2835_gpio_write(CLK,LOW);
                   			 bcm2835_delayMicroseconds(14);  /* then move to next iteration */
           			}
-
+				up(&sema);
+			}
 		break;  
 	}
 // set __init and __exit flags????
