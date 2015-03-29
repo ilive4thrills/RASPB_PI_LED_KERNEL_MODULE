@@ -6,10 +6,10 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>      /* allows us to use file_operations structure */
 #include <linux/cdev.h>       /* allows us to use character device "structures" */
-#include <linux/semaphore.h> /* enable locking */
+#include <linux/semaphore.h> /* enable semaphore locking */
 #include <asm/uaccess.h>   /* copy_to_user and copy_from_user */
 #include <linux/kdev_t.h>   /* use MAJOR macro for dev_t types */
-#include <linux/device.h>
+#include <linux/device.h>    /* for device representation in the kernel. */
 #include <linux/types.h>
 #include <linux/delay.h>  /* doing delays in kernel space */
 #include <linux/gpio.h>   /*includes errno.h as well. */
@@ -17,19 +17,28 @@
 #include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
 
 #define DEV_NAME "RGB_LED" 
-#define DEV_AUTHOR "Joseph Garcia"
+#define DEV_AUTHOR "Joseph Garcia"                  /* Information for modinfo command. */
 #define LICENSE "GPL"
 #define MOD_DESC "This device allows multiple readers, but will only allow writing after previous value has been read.(ECE 331 HW 7)"
 
- /*create instance of RGB_LED */  /* I think this will come in handy..... */
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
 static struct class* dev_cls;  /* create class type for the character device */
 
-char* RGB_LED_GPIO_LBLS[4] = {"Red","Green","Blue","CLK"};
+char* RGB_LED_GPIO_LBLS[4] = {"Red","Green","Blue","CLK"};   /* For GPIO pin initialization. */
 static int majornum;  
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
+
+/* led lighting varaibles */
+rgb_led_colors RGB_LED;
+int red = 0;
+int green = 0; 
+int blue = 0;
+int redb = 0;
+int greenb = 0;
+int blueb = 0;
+int j = 0;
 
 static int open_device(struct inode* inode, struct file* file)   /* open the device */
 {
@@ -45,7 +54,6 @@ static int release_device(struct inode* inode, struct file* file)   /* release t
 
 static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
-	rgb_led_colors RGB_LED; 	
 	switch(cmd) {
 		
 		case RGB_LED_R:
@@ -59,40 +67,48 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 		break;
 
 		case RGB_LED_W:   /* Turn user space code into kernel space code. */
-		TO DO: 
+	//	TO DO: 
 			// Piece of code to reject incoming processes if writing is still going on DONEISH
 			// Initialize the clock, found on PIN 25. It needs to be set low initially. DONE
-			// Set device file permissions
-			// Piece of code to allow writing to the RGB_LED to occur. 
+			// Set device file permissions   TO_DO
+			// Piece of code to allow writing to the RGB_LED to occur. (DONE)
 			// set __init and __exit flags????
 			
 			if (down_interruptible(&sema) != 0) {
 				printk(KERN_ALERT "Another process is currently writing to the RGB_LED device.\n");
 				return -1;
 			}
-			if ((func_ret = copy_from_user(RGB_LED, (rgb_led_colors *)arg, sizeof(rgb_led_colors))) != 0) {
+			if ((func_ret = copy_from_user(&RGB_LED, (rgb_led_colors *)arg, sizeof(rgb_led_colors))) != 0) {
 				printk(KERN_ALERT "Unable to copy information from user space.\n");
 				return func_ret;
 			}
 			if (func_ret == 0) {
-				down_interruptible(&sema);
-		   		for(k = 0; k < 11; k++) {
-                	  		redb = (red >> (10 - k)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
-                  			set_gpio_value...bcm2835_gpio_write(RED, redb);
-                  			greenb = (green >> (10 - k)) & 1;    /* same as above */
-                  			bcm2835_gpio_write(GREEN, greenb);
-                  			blueb = (blue >> (10 - k)) & 1;     /* same as above */
-                  			bcm2835_gpio_write(BLUE, blueb);
+				red = ~(RGB_LED.red);
+				green = ~(RGB_LED.green);
+				blue = ~(RGB_LED.blue);
+		   		for(j = 0; j < 11; j++) {
+                	  		redb = (red >> (10 - j)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
+                  			gpio_set_value(RED, redb);
+
+                  			greenb = (green >> (10 - j)) & 1;    /* same as above */
+                  			gpio_set_value(GREEN, greenb);
+
+                  			blueb = (blue >> (10 - j)) & 1;     /* same as above */
+                  			gpio_set_value(BLUE, blueb);
  
 			                  /* create HIGH-LOW clock cycle */
-        	         		 bcm2835_gpio_write(CLK,HIGH);
-                	  		 bcm2835_delayMicroseconds(14);   /* delay for 14 us to account for "twitching" in signal. */
-                  			 bcm2835_gpio_write(CLK,LOW);
-                  			 bcm2835_delayMicroseconds(14);  /* then move to next iteration */
-          			}
+					gpio_set_value(CLK, 1);
+					udelay(14) ;   
+					gpio_set_value(CLK, 0);
+					udelay(14);
+					printk(KERN_INFO "is this an infinite loop.\n");
+				}
 				up(&sema);
 			}
 		break;  
+		default:
+			// do nothing
+		break;
 	}
 // set __init and __exit flags????
 }
