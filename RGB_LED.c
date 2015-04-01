@@ -24,18 +24,18 @@
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
 static struct class* dev_cls;  /* create class type for the character device */
 
-char* RGB_LED_GPIO_LBLS[4] = {"Red","Green","Blue","CLK"};   /* For GPIO pin initialization. */
+char* RGB_LED_GPIO_LBLS[4] = {"Red","Green","Blue","CLK"};   /* Create labels for GPIO pins (used in initialization.) */
 static int majornum;  
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
 
 /* led lighting varaibles */
-rgb_led_colors RGB_LED;
+rgb_led_colors RGB_LED;       /* global variable representing color information passed to character device driver. */
 int red = 0;
 int green = 0; 
 int blue = 0;
-int redb = 0;
+int redb = 0;             /* local variables used in ioctl() for lighting the LED. */
 int greenb = 0;
 int blueb = 0;
 int j = 0;
@@ -58,33 +58,30 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 		
 		case RGB_LED_R:
 			printk(KERN_INFO "Reading RGB_LED not a supported operation for device.\n");
-			return -EBADRQC;  /* return bad request code */
+			return -EBADRQC;  								/* return bad request code, cannot read from the RGB LED */
 		break;
 	
 		case RGB_LED_RW:
-			printk(KERN_INFO "Read & Write Not a supported operation for device.\n");
+			printk(KERN_INFO "Read & Write Not a supported operation for device.\n");   /* Cannot read/write with RGB LED */
 			return -EBADRQC;
 		break;
 
-		case RGB_LED_W:   /* Turn user space code into kernel space code. */
+		case RGB_LED_W:   /* writing to the RGB LED permitted. */
 	//	TO DO: 
-			// Piece of code to reject incoming processes if writing is still going on DONEISH
-			// Initialize the clock, found on PIN 25. It needs to be set low initially. DONE
-			// Set device file permissions   TO_DO
-			// Piece of code to allow writing to the RGB_LED to occur. (DONE)
-			// set __init and __exit flags????
+			// Set device file permissions!!!! (NOT DONE)
+			// SET LEDs LOW in the device driver removal (DONE)
 			
 			if (down_interruptible(&sema) != 0) {
-				printk(KERN_ALERT "Another process is currently writing to the RGB_LED device.\n");
-				return -1;
+				printk(KERN_ALERT "Another process is currently writing to the RGB_LED device.\n"); 
+				return -1;   /* lock the device so only one process can write to it at a time. */
 			}
 			if ((func_ret = copy_from_user(&RGB_LED, (rgb_led_colors *)arg, sizeof(rgb_led_colors))) != 0) {
-				printk(KERN_ALERT "Unable to copy information from user space.\n");
+				printk(KERN_ALERT "Unable to copy information from user space.\n");  /* ensure that information was able to be passed from user space */
 				return func_ret;
 			}
 			if (func_ret == 0) {
 				red = ~(RGB_LED.red);
-				green = ~(RGB_LED.green);
+				green = ~(RGB_LED.green);    /* take complements of color values (ranging from 0 to 2047) passed in by user. */
 				blue = ~(RGB_LED.blue);
 		   		for(j = 0; j < 11; j++) {
                 	  		redb = (red >> (10 - j)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
@@ -101,22 +98,21 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 					udelay(14) ;   
 					gpio_set_value(CLK, 0);
 					udelay(14);
-					printk(KERN_INFO "is this an infinite loop.\n");
 				}
-				up(&sema);
+				up(&sema);   /* free the lock, now other processes can write to the LED */
 			}
 		break;  
 		default:
-			// do nothing
+			printk(KERN_ALERT "User passed in unrecognized ioctl command for /dev/RGB_LED device.\n");
+			return -EBADRQC;
 		break;
 	}
-// set __init and __exit flags????
 }
 
 
 struct file_operations fops = {
 	.owner = THIS_MODULE,		/* "prevent unloading of module when operations are being used" SolidusCode (links function pointers to driver, I assiume) */
-	.unlocked_ioctl = rgb_led_ioctl,
+	.unlocked_ioctl = rgb_led_ioctl,   /* pointer to ioctl function for writing methods on the RGB LED device. */
 	.open = open_device,              /* " " opening the device */
 	.release = release_device  /* " " closing the device */
 };
@@ -185,13 +181,14 @@ static int cleanup_driver(void) {  /* unregister everything in reverse order. */
     
     	int k = 0;
 	for (k = 22; k < 26; k++) {
+		gpio_set_value(k,0);   /* set each GPIO pin back to LOW. (make sure LED is shut off upon module removal) */
 		gpio_free(k);              /* freeing the GPIO pins */
 	}	
     	cdev_del(mycdev); /* free the char device structure space */
-    	device_destroy(dev_cls,devnum);
-    	class_destroy(dev_cls);
+    	device_destroy(dev_cls,devnum);   /* destroy kernel representation of character device */
+    	class_destroy(dev_cls);           /* destroy class representing character device */
 	unregister_chrdev_region(devnum,1); /* start unregistering (1) device number, starting at device number (devnum). */
-	printk(KERN_INFO "RGB_LED: Device unloaded.\n");	/* don't need to return anything */
+	printk(KERN_INFO "RGB_LED: Device unloaded.\n");	
 	return 0;
 }
 
@@ -202,36 +199,3 @@ MODULE_AUTHOR(DEV_AUTHOR);
 MODULE_LICENSE(LICENSE);            /* For modinfo information listings */
 MODULE_DESCRIPTION(MOD_DESC);                                                                    
 
-#if 0
-ssize_t read_device(struct file* filp, char* userbuf, size_t bufsize, loff_t* offset)  /* read data from device */
-{
-      /* using copy_to_user(destination,source,amt2transfer) */
-	printk(KERN_INFO "Reading from the device.\n");
-	func_ret = copy_to_user(userbuf,hw7_device.value,sizeof(hw7_device.value)); /* copy data from kernel space into user space */
-	if (func_ret != 0) {
-		printk(KERN_ALERT "did not read all the data from the device.\n");
-	}
-	if (down_interruptible(&sema) != 0) {  /* If process has sema locked, we unlock it, assuming read went okay */
-		up(&sema);
-	}
-	return func_ret;
-}
-
-ssize_t write_device(struct file* filp, const char __user * userbuf, size_t bufsize, loff_t* offset)   /* write data to device */
-{
-	printk(KERN_INFO "writing to the device\n");
-	if (down_interruptible(&sema) != 0) {
-		printk(KERN_INFO "Device has already been written to; please read data put in earlier.");
-	}
-	if(down_interruptible(&sema) == 0) { /*device is available */
-		func_ret = copy_from_user(hw7_device.value,userbuf,bufsize); /* copy data from user space */
-		if (func_ret != 0) {
-			printk(KERN_ALERT "writing to the device did not work.\n");
-		}
-		if (func_ret == 0) {  /* successful write */
-			down_interruptible(&sema);  /* add lock, we successfully wrote the value */
-		}
-	}
-	return func_ret;
-}
-#endif
