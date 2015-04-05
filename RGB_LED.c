@@ -22,13 +22,15 @@
 #define MOD_DESC "This device allows multiple readers, but will only allow writing after previous value has been read.(ECE 331 HW 7)"
 
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
-static struct class* dev_cls;  /* create class type for the character device */
+static struct class* dev_cls;            /* create class type for the character device, introduce pointer to permission setting method */
 
 char* RGB_LED_GPIO_LBLS[4] = {"Red","Green","Blue","CLK"};   /* Create labels for GPIO pins (used in initialization.) */
 static int majornum;  
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
+static struct device* device;
+static struct kobj_uevent_env* envir;
 
 /* led lighting varaibles */
 rgb_led_colors RGB_LED;       /* global variable representing color information passed to character device driver. */
@@ -39,6 +41,23 @@ int redb = 0;             /* local variables used in ioctl() for lighting the LE
 int greenb = 0;
 int blueb = 0;
 int j = 0;
+int k = 0;
+
+static int check_vals(int red, int green, int blue)
+{
+	if (red < 0 || green < 0 || blue < 0 || red > 2047 || green > 2047 || blue > 2047) {
+		printk(KERN_ALERT "One or more of your numbers is invalid. Exiting Program.\n");     /* make sure numbers are valid */
+		return -EOVERFLOW;   
+	} else {
+		return 0;
+	}
+}
+
+static int my_dev_uevent(struct device *device, struct kobj_uevent_env *envir)
+{
+	add_uevent_var(envir, "DEVMODE=%#o",0666);
+	return 0;
+}
 
 static int open_device(struct inode* inode, struct file* file)   /* open the device */
 {
@@ -67,48 +86,43 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 		break;
 
 		case RGB_LED_W:   /* writing to the RGB LED permitted. */
-	//	TO DO: 
-			// Set device file permissions!!!! (NOT DONE)
-			// SET LEDs LOW in the device driver removal (DONE)
-			
 			if (down_interruptible(&sema) != 0) {
 				printk(KERN_ALERT "Another process is currently writing to the RGB_LED device.\n"); 
-				return -1;   /* lock the device so only one process can write to it at a time. */
+				return -EACCES;   /* lock the device so only one process can write to it at a time. */
 			}
 			if ((func_ret = copy_from_user(&RGB_LED, (rgb_led_colors *)arg, sizeof(rgb_led_colors))) != 0) {
 				printk(KERN_ALERT "Unable to copy information from user space.\n");  /* ensure that information was able to be passed from user space */
 				return func_ret;
 			}
-			if (func_ret == 0) {
+			if ((func_ret == 0) && (check_vals(RGB_LED.red, RGB_LED.green, RGB_LED.blue) == 0)) {
 				red = ~(RGB_LED.red);
-				green = ~(RGB_LED.green);    /* take complements of color values (ranging from 0 to 2047) passed in by user. */
+				green = ~(RGB_LED.green);
 				blue = ~(RGB_LED.blue);
-		   		for(j = 0; j < 11; j++) {
-                	  		redb = (red >> (10 - j)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
-                  			gpio_set_value(RED, redb);
-
-                  			greenb = (green >> (10 - j)) & 1;    /* same as above */
-                  			gpio_set_value(GREEN, greenb);
-
-                  			blueb = (blue >> (10 - j)) & 1;     /* same as above */
-                  			gpio_set_value(BLUE, blueb);
- 
+				for(j = 0; j < 11; j++) {
+        	          		redb = (red >> (10 - j)) & 1; /* shift red color value msb to 0-bit position, and with 1 to get proper output signal (0 or 1) */
+                			gpio_set_value(RED, redb);
+ 	          			greenb = (green >> (10 - j)) & 1;    /* same as above */
+               	  			gpio_set_value(GREEN, greenb);
+	
+       	          			blueb = (blue >> (10 - j)) & 1;     /* same as above */
+               	  			gpio_set_value(BLUE, blueb);
+ 	
 			                  /* create HIGH-LOW clock cycle */
 					gpio_set_value(CLK, 1);
 					udelay(14) ;   
 					gpio_set_value(CLK, 0);
 					udelay(14);
 				}
-				up(&sema);   /* free the lock, now other processes can write to the LED */
 			}
+			up(&sema);   /* free the lock */
 		break;  
 		default:
 			printk(KERN_ALERT "User passed in unrecognized ioctl command for /dev/RGB_LED device.\n");
 			return -EBADRQC;
 		break;
 	}
+return 0;
 }
-
 
 struct file_operations fops = {
 	.owner = THIS_MODULE,		/* "prevent unloading of module when operations are being used" SolidusCode (links function pointers to driver, I assiume) */
@@ -117,13 +131,7 @@ struct file_operations fops = {
 	.release = release_device  /* " " closing the device */
 };
 
-#if 0
-char *module_perm(struct device *dev, umode_t *mode)
-{
-    if(mode) *mode = 0666;
-    return NULL;
-}
-#endif
+
 
 /* register capabilities of the device driver with kernel */
 
@@ -147,7 +155,10 @@ static int init_driver(void) {
 		unregister_chrdev_region(devnum,1);           /* create /dev file for the RGB LED */
 		return -1;
 	}
-
+	
+	
+	dev_cls->dev_uevent = my_dev_uevent;
+	
 	if ((mycdev = cdev_alloc()) == NULL) { /* allocate space for charcter device struct, contains file operations struct */
 		printk(KERN_ALERT "Failed to allocate and return a cdev structure\n");
 	}
@@ -177,11 +188,28 @@ static int init_driver(void) {
 	return 0; /* successful driver initialization */
 }
 
-static int cleanup_driver(void) {  /* unregister everything in reverse order. */
-    
-    	int k = 0;
+static int cleanup_driver(void)   /* unregister everything in reverse order. */
+{
+	red = ~(0);
+	green = ~(0);    
+	blue = ~(0);
+	for(j = 0; j < 11; j++) {
+		redb = (red >> (10 - j)) & 1; 
+		gpio_set_value(RED, redb);
+
+		greenb = (green >> (10 - j)) & 1;    
+		gpio_set_value(GREEN, greenb);
+
+		blueb = (blue >> (10 - j)) & 1;     
+		gpio_set_value(BLUE, blueb);
+ 
+		gpio_set_value(CLK, 1);
+		udelay(14) ;   
+		gpio_set_value(CLK, 0);
+		udelay(14);
+	}
+
 	for (k = 22; k < 26; k++) {
-		gpio_set_value(k,0);   /* set each GPIO pin back to LOW. (make sure LED is shut off upon module removal) */
 		gpio_free(k);              /* freeing the GPIO pins */
 	}	
     	cdev_del(mycdev); /* free the char device structure space */
@@ -189,7 +217,7 @@ static int cleanup_driver(void) {  /* unregister everything in reverse order. */
     	class_destroy(dev_cls);           /* destroy class representing character device */
 	unregister_chrdev_region(devnum,1); /* start unregistering (1) device number, starting at device number (devnum). */
 	printk(KERN_INFO "RGB_LED: Device unloaded.\n");	
-	return 0;
+return 0;
 }
 
 module_init(init_driver);
