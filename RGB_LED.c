@@ -29,8 +29,8 @@ static int majornum;
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
-static struct device* device;
-static struct kobj_uevent_env* envir;
+//static struct device* device;
+//umode_t* accessmode;
 
 /* led lighting varaibles */
 rgb_led_colors RGB_LED;       /* global variable representing color information passed to character device driver. */
@@ -43,6 +43,8 @@ int blueb = 0;
 int j = 0;
 int k = 0;
 
+
+
 static int check_vals(int red, int green, int blue)
 {
 	if (red < 0 || green < 0 || blue < 0 || red > 2047 || green > 2047 || blue > 2047) {
@@ -53,9 +55,17 @@ static int check_vals(int red, int green, int blue)
 	}
 }
 
+//char* device_file_perms(struct device *device, umode_t* accessmode)
+//{
+//	if (accessmode) {
+//		*accessmode = 0666;
+//	}
+//	return NULL;
+//}
+
 static int my_dev_uevent(struct device *device, struct kobj_uevent_env *envir)
 {
-	add_uevent_var(envir, "DEVMODE=%#o",0666);
+	add_uevent_var(envir, "DEVMODE=%#o", 0666);
 	return 0;
 }
 
@@ -150,14 +160,13 @@ static int init_driver(void) {
 		return -1;                                                                 /* create class "chardrv" for character device */
 	}
 
+	dev_cls->dev_uevent = my_dev_uevent;
+//	dev_cls->devnode = device_file_perms;
 	if(device_create(dev_cls, NULL, devnum, NULL, "RGB_LED") == NULL) { /*ERR_PTR is another name for the failure value */
 		class_destroy(dev_cls);
 		unregister_chrdev_region(devnum,1);           /* create /dev file for the RGB LED */
 		return -1;
 	}
-	
-	
-	dev_cls->dev_uevent = my_dev_uevent;
 	
 	if ((mycdev = cdev_alloc()) == NULL) { /* allocate space for charcter device struct, contains file operations struct */
 		printk(KERN_ALERT "Failed to allocate and return a cdev structure\n");
