@@ -14,12 +14,12 @@
 #include <linux/delay.h>  /* doing delays in kernel space */
 #include <linux/gpio.h>   /*includes errno.h as well. */
 //#include <sys/stat.h>    /* set permissions of device file */
-#include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
+#include "/home/pi/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
 
 #define DEV_NAME "RGB_LED" 
 #define DEV_AUTHOR "Joseph Garcia"                  /* Information for modinfo command. */
 #define LICENSE "GPL"
-#define MOD_DESC "This device allows multiple readers, but will only allow writing after previous value has been read.(ECE 331 HW 7)"
+#define MOD_DESC "This device allows all users on a linux system to write to the RPI expansion board RGB LED."
 
 static struct cdev* mycdev;  /* pointer "mycdev" points to cdev structure, contains module owner info, fops struct pointer, device number, etc. */
 static struct class* dev_cls;            /* create class type for the character device, introduce pointer to permission setting method */
@@ -29,8 +29,6 @@ static int majornum;
 static int func_ret; /*generic variable to store values returned by functions */
 static dev_t devnum; /* struct to store major and minor number dynamically allocated by the kernel. */
 static struct semaphore sema; /*global variable to act as semaphore for the RGB LED */
-//static struct device* device;
-//umode_t* accessmode;
 
 /* led lighting varaibles */
 rgb_led_colors RGB_LED;       /* global variable representing color information passed to character device driver. */
@@ -43,8 +41,6 @@ int blueb = 0;
 int j = 0;
 int k = 0;
 
-
-
 static int check_vals(int red, int green, int blue)
 {
 	if (red < 0 || green < 0 || blue < 0 || red > 2047 || green > 2047 || blue > 2047) {
@@ -55,17 +51,9 @@ static int check_vals(int red, int green, int blue)
 	}
 }
 
-//char* device_file_perms(struct device *device, umode_t* accessmode)
-//{
-//	if (accessmode) {
-//		*accessmode = 0666;
-//	}
-//	return NULL;
-//}
-
 static int my_dev_uevent(struct device *device, struct kobj_uevent_env *envir)
 {
-	add_uevent_var(envir, "DEVMODE=%#o", 0666);
+	add_uevent_var(envir, "DEVMODE=%#o", 0222);
 	return 0;
 }
 
@@ -81,10 +69,9 @@ static int release_device(struct inode* inode, struct file* file)   /* release t
 	return 0;
 }
 
-static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
+long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
-	switch(cmd) {
-		
+	switch(cmd) {	
 		case RGB_LED_R:
 			printk(KERN_INFO "Reading RGB_LED not a supported operation for device.\n");
 			return -EBADRQC;  								/* return bad request code, cannot read from the RGB LED */
@@ -125,7 +112,8 @@ static long rgb_led_ioctl(struct file* filp, unsigned int cmd, unsigned long arg
 				}
 			}
 			up(&sema);   /* free the lock */
-		break;  
+			return 0;
+			break;  
 		default:
 			printk(KERN_ALERT "User passed in unrecognized ioctl command for /dev/RGB_LED device.\n");
 			return -EBADRQC;
@@ -140,8 +128,6 @@ struct file_operations fops = {
 	.open = open_device,              /* " " opening the device */
 	.release = release_device  /* " " closing the device */
 };
-
-
 
 /* register capabilities of the device driver with kernel */
 
@@ -161,7 +147,6 @@ static int init_driver(void) {
 	}
 
 	dev_cls->dev_uevent = my_dev_uevent;
-//	dev_cls->devnode = device_file_perms;
 	if(device_create(dev_cls, NULL, devnum, NULL, "RGB_LED") == NULL) { /*ERR_PTR is another name for the failure value */
 		class_destroy(dev_cls);
 		unregister_chrdev_region(devnum,1);           /* create /dev file for the RGB LED */
