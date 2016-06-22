@@ -14,7 +14,7 @@
 #include <linux/delay.h>  /* doing delays in kernel space */
 #include <linux/gpio.h>   /*includes errno.h as well. */
 //#include <sys/stat.h>    /* set permissions of device file */
-#include "/home/pi/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
+#include "/home/joseph/Desktop/ece_331_led1/RGB_LED_IOCTL.h" /* includes linux/ioctl.h> */
 
 #define DEV_NAME "RGB_LED" 
 #define DEV_AUTHOR "Joseph Garcia"                  /* Information for modinfo command. */

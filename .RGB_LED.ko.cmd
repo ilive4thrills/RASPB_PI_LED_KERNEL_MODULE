@@ -1,0 +1,1 @@
+cmd_/home/joseph/Desktop/ece_331_led1/RGB_LED.ko := ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/joseph/Desktop/ece_331_led1/RGB_LED.ko /home/joseph/Desktop/ece_331_led1/RGB_LED.o /home/joseph/Desktop/ece_331_led1/RGB_LED.mod.o

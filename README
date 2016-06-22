@@ -5,3 +5,7 @@ To update Gitlab:
 $ git add file file1 etc
 $ git commit -m "file"
 $ git push
+
+
+NOTE (written by Joseph Garcia, August 14, 2015): To make symlink changes for KERNEL DRIVER compilation trees, modify the build and source
+links (located in /lib/modules) to point to the proper linux version in /usr/src/linux(etc).
